@@ -1,0 +1,19 @@
+{
+  "name": "teste-scraper-maps",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node maps_scraper.js",
+    "scraper": "node maps_scraper.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "minimist": "^1.2.8",
+    "openai": "^6.16.0",
+    "playwright": "^1.57.0"
+  }
+}

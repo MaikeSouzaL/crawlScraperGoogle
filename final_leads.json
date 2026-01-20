@@ -1,0 +1,185 @@
+[
+  {
+    "company_info": {
+      "name": "Dr. Florence Hababou Behar",
+      "tax_id": {
+        "type": null,
+        "value": null,
+        "country": null
+      },
+      "description": "Spécialiste en Orthodontie pour Enfants et Adultes, le docteur Florence Behar est reconnue comme une des meilleures orthodontistes à Paris.",
+      "category": "Orthodontiste",
+      "sentiment": "Positive"
+    },
+    "contact_details": {
+      "address": "21 Rue de Miromesnil, 75008 Paris, France",
+      "address_components": {
+        "street": "Rue de Miromesnil",
+        "number": "21",
+        "neighborhood": null,
+        "city": "Paris",
+        "state": null,
+        "zip_code": "75008",
+        "country": "France",
+        "country_code": "FR"
+      },
+      "phones": [
+        "+33123456789"
+      ],
+      "emails": [
+        "contact@orthodontie-pariselysee.fr"
+      ],
+      "website": "https://www.orthodontie-pariselysee.fr/",
+      "social_media": {
+        "instagram": "https://www.instagram.com/orthodontiste.paris8?hl=fr",
+        "facebook": "https://www.facebook.com/orthodontiste.paris",
+        "linkedin": "https://www.linkedin.com/in/orthodontistepariselysee"
+      },
+      "whatsapp_verified": [
+        {
+          "phone": "+33123456789",
+          "link": "https://wa.me/5533123456789"
+        }
+      ]
+    },
+    "business_intelligence": {
+      "tech_stack": [],
+      "products_services": [
+        "Gouttières transparentes",
+        "Traitement sans extraction",
+        "Orthopédie dento faciale",
+        "Traitement des verrous de croissance"
+      ],
+      "target_audience": "Enfants, adultes et adolescents ayant besoin de traitement orthodontique.",
+      "key_people": [
+        {
+          "name": "Dr. Florence Hababou Behar",
+          "role": "Orthodontiste"
+        }
+      ],
+      "social_media_insights": {
+        "bio": "Spécialiste Qualifiée en Orthopédie Dento-Faciale",
+        "followers": null,
+        "latest_activity": null
+      },
+      "hunter_io_verified": true
+    },
+    "google_maps_metadata": {
+      "is_claimed": true,
+      "plus_code": null,
+      "located_in": null,
+      "google_description": null,
+      "opening_hours": "Ouvert 24h/24",
+      "coordinates": {
+        "latitude": "48.872576",
+        "longitude": "2.3159"
+      },
+      "rating": "4.7",
+      "reviews": "267",
+      "available_actions": [],
+      "google_attributes": {}
+    },
+    "outreach_messages": {
+      "email": {
+        "subject": "Améliorez votre efficacité avec des solutions personnalisées",
+        "body": "Bonjour Dr. Florence Behar,\n\nJe m'appelle Carlos Silva, et je suis consultant chez NexTech Solutions. Nous aidons des cliniques comme la vôtre à automatiser des processus et améliorer l'efficacité opérationnelle. J'aimerais discuter de comment nos services pourraient réduire les erreurs de prise de rendez-vous et améliorer la gestion des patients dans votre cabinet.\n\nCordialement,\nCarlos"
+      },
+      "whatsapp": "Bonjour Dr. Behar! 🌟 Votre cabinet est impressionnant! Si vous cherchez à optimiser votre gestion des patients, je suis là pour vous aider! 💼"
+    },
+    "cnpja_data": null
+  },
+  {
+    "company_info": {
+      "name": "Clinique des Champs Elysées Paris - Chirurgie et médecine esthétique",
+      "tax_id": {
+        "type": null,
+        "value": null,
+        "country": null
+      },
+      "description": "La Clinique des Champs-Élysées Paris 8ème est une référence dans le domaine de la médecine et de la chirurgie esthétique depuis 1947, offrant des services innovants et sécurisés pour répondre aux besoins individuels en matière de beauté et de bien-être.",
+      "category": "Clinique",
+      "sentiment": "Professionnel"
+    },
+    "contact_details": {
+      "address": "61 Avenue Franklin Delano Roosevelt, 75008 Paris, France",
+      "address_components": {
+        "street": "Avenue Franklin Delano Roosevelt",
+        "number": "61",
+        "neighborhood": null,
+        "city": "Paris",
+        "state": null,
+        "zip_code": "75008",
+        "country": "France",
+        "country_code": "FR"
+      },
+      "phones": [
+        "+33153772588"
+      ],
+      "emails": [
+        "jocelyn.isambert@crpce.com",
+        "tracy.sayag@crpce.com",
+        "julien.laloux@crpce.com",
+        "florie.garnier@crpce.com",
+        "jade.miron-cuny@crpce.com",
+        "soline.celarier@crpce.com",
+        "sara.andaloussi@crpce.com",
+        "emma.trontin@crpce.com",
+        "claire.lecarpentier@crpce.com",
+        "quentin.richard@crpce.com"
+      ],
+      "website": "https://www.crpce.com/clinique-esthetique-paris-8eme?utm_source=gmb&utm_medium=organic&utm_campaign=local_listing",
+      "social_media": {
+        "instagram": null,
+        "facebook": null,
+        "linkedin": null
+      },
+      "whatsapp_verified": [
+        {
+          "phone": "+33153772588",
+          "link": "https://wa.me/5533153772588"
+        }
+      ]
+    },
+    "business_intelligence": {
+      "tech_stack": [],
+      "products_services": [
+        "Médecine esthétique",
+        "Chirurgie esthétique",
+        "Esthétique dentaire",
+        "Épilation laser",
+        "Soins capillaires"
+      ],
+      "target_audience": "Patients cherchant des traitements esthétiques avancés",
+      "key_people": [],
+      "social_media_insights": {
+        "bio": null,
+        "followers": null,
+        "latest_activity": null
+      },
+      "hunter_io_verified": true
+    },
+    "google_maps_metadata": {
+      "is_claimed": true,
+      "plus_code": null,
+      "located_in": null,
+      "google_description": null,
+      "opening_hours": "Lundi au vendredi : 9h-19h30, Samedi : 9h-19h",
+      "coordinates": {
+        "latitude": "48.871714",
+        "longitude": "2.309847"
+      },
+      "rating": "4,2",
+      "reviews": "2244",
+      "available_actions": [],
+      "google_attributes": {}
+    },
+    "outreach_messages": {
+      "email": {
+        "subject": "Améliorer l'efficacité de votre clinique.",
+        "body": "Bonjour,\n\nJe me permets de vous contacter au sujet de la Clinique des Champs-Élysées Paris 8ème. Nos services de développement de solutions numériques sur mesure peuvent vous aider à optimiser vos processus, réduisant ainsi les erreurs d'agenda et améliorant l'expérience patient. Je serais ravi d'en discuter plus en détail avec vous.\n\nCordialement,\nCarlos Silva"
+      },
+      "whatsapp": "Bonjour 👋! Je suis Carlos de NexTech. Nous pouvons aider votre clinique à améliorer sa gestion des rendez-vous. Cela vous intéresse ? 📈"
+    },
+    "cnpja_data": null
+  }
+]

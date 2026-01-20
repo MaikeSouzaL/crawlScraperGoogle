@@ -1,0 +1,5 @@
+.venv/
+proxies.txt
+
+node_modules/
+.env

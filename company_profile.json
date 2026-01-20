@@ -1,0 +1,27 @@
+{
+  "company_name": "NexTech Solutions",
+  "slogan": "Transformando ideias em software de alta performance",
+  "website": "https://nextech.com.br",
+  "services": [
+    "Desenvolvimento de Sistemas Web",
+    "Aplicativos Mobile (iOS/Android)",
+    "Automação de Processos (RPA)",
+    "Integrações com APIs e CRMs",
+    "Consultoria em Transformação Digital"
+  ],
+  "target_clients": "Clínicas, Imobiliárias, Escritórios de Advocacia, Empresas de Serviços",
+  "value_proposition": "Aumentamos a eficiência operacional em até 40% com sistemas sob medida.",
+  "pain_points_we_solve": [
+    "Agendamentos manuais que geram erros",
+    "Falta de integração entre sistemas",
+    "Processos repetitivos que consomem tempo",
+    "Dificuldade em acompanhar métricas de negócio"
+  ],
+  "contact": {
+    "name": "Carlos Silva",
+    "role": "Consultor de Negócios",
+    "email": "carlos@nextech.com.br",
+    "phone": "+5511999999999",
+    "whatsapp": "+5511999999999"
+  }
+}
