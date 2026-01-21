@@ -9,6 +9,8 @@ from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 from openai import OpenAI
 from email_validator import validate_email, EmailNotValidError
 
+import time
+
 
 # Carregar variáveis do .env
 load_dotenv()
@@ -16,6 +18,73 @@ API_KEY = os.getenv("OPENAI_API_KEY")
 HUNTER_API_KEY = os.getenv("HUNTER_API_KEY")
 
 client = OpenAI(api_key=API_KEY)
+
+
+def load_items(input_path: str):
+    """Carrega itens do arquivo de entrada.
+
+    Suporta:
+      - .json  : lista JSON tradicional
+      - .jsonl : JSON Lines (1 objeto por linha)
+    """
+    _, ext = os.path.splitext(input_path.lower())
+    if ext == ".jsonl":
+        items = []
+        with open(input_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    items.append(json.loads(line))
+                except Exception:
+                    # se uma linha estiver quebrada, ignora para não parar o job inteiro
+                    continue
+        return items
+
+    with open(input_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def iter_jsonl_lines_follow(path: str, poll_interval: float = 0.5):
+    """Itera linhas JSONL à medida que elas são adicionadas ao arquivo.
+
+    - Funciona estilo "tail -f".
+    - Retorna dicts (json.loads por linha).
+    - Para quando encontra uma linha especial: "__END__".
+    """
+    with open(path, "r", encoding="utf-8") as f:
+        while True:
+            line = f.readline()
+            if not line:
+                time.sleep(poll_interval)
+                continue
+            line = line.strip()
+            if not line:
+                continue
+            if line == "__END__":
+                return
+            try:
+                yield json.loads(line)
+            except Exception:
+                # Linha parcial / corrompida: ignora
+                continue
+
+
+def iter_jsonl_objects(path: str):
+    """Itera objetos de um arquivo JSONL já finalizado (um JSON por linha).
+
+    Ignora linhas vazias, corrompidas e o marcador __END__.
+    """
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line == "__END__":
+                continue
+            try:
+                yield json.loads(line)
+            except Exception:
+                continue
 
 # Load Company Profile for Personalized Messages
 COMPANY_PROFILE = {}
@@ -287,23 +356,44 @@ def fetch_hunter_emails(domain):
     print(f"      🔫 Hunting emails for: {domain}...")
     url = f"https://api.hunter.io/v2/domain-search?domain={domain}&api_key={HUNTER_API_KEY}"
     try:
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            raw_emails = data.get('data', {}).get('emails', [])
-            valid_emails = []
-            for e in raw_emails:
-                email_val = e.get('value')
-                if email_val:
-                    verified = verify_email_address(email_val)
-                    if verified:
-                        valid_emails.append(verified)
-            
-            print(f"      🎯 Hunter found {len(valid_emails)} VALID emails (from {len(raw_emails)} raw)!")
-            return valid_emails
-        else:
+        # Hunter tem rate limit; quando dá 429 significa "muitas requisições".
+        # Vamos tentar poucas vezes com backoff e respeitando Retry-After, quando presente.
+        attempts = 0
+        max_attempts = 3
+        while attempts < max_attempts:
+            attempts += 1
+            response = requests.get(url, timeout=10)
+
+            if response.status_code == 200:
+                data = response.json()
+                raw_emails = data.get('data', {}).get('emails', [])
+                valid_emails = []
+                for e in raw_emails:
+                    email_val = e.get('value')
+                    if email_val:
+                        verified = verify_email_address(email_val)
+                        if verified:
+                            valid_emails.append(verified)
+
+                print(f"      🎯 Hunter found {len(valid_emails)} VALID emails (from {len(raw_emails)} raw)!")
+                return valid_emails
+
+            if response.status_code == 429:
+                retry_after = response.headers.get('Retry-After')
+                try:
+                    wait_seconds = int(retry_after) if retry_after else (2 ** attempts)
+                except Exception:
+                    wait_seconds = (2 ** attempts)
+                print(f"      ⚠️ Hunter rate limit (429). Waiting {wait_seconds}s then retrying ({attempts}/{max_attempts})...")
+                time.sleep(wait_seconds)
+                continue
+
+            # Qualquer outro status: não vale insistir muito.
             print(f"      ⚠️ Hunter API Error: {response.status_code}")
             return []
+
+        print("      ⚠️ Hunter rate limit persisted after retries. Skipping Hunter for this lead.")
+        return []
     except Exception as e:
         print(f"      ⚠️ Hunter Exception: {e}")
         return []
@@ -488,13 +578,15 @@ async def main():
         print(f"File not found: {json_file}")
         return
 
+    stream_mode = json_file.lower().endswith('.jsonl')
+
     print(f"Loading data from {json_file}...")
     print(f"🌐 Output Language: {output_lang}")
     if search_country:
         print(f"🏳️ Search Country: {search_country}")
-    
-    with open(json_file, 'r', encoding='utf-8') as f:
-        items = json.load(f)
+
+    # No modo stream, não carregamos tudo de uma vez; vamos consumindo linha a linha
+    items = [] if stream_mode else load_items(json_file)
 
     # Configure Browser (Anti-blocking / Stealth)
     browser_config = BrowserConfig(
@@ -505,11 +597,395 @@ async def main():
 
     final_leads = []
 
+    # Sempre salvar na pasta do script (independente do current working directory)
+    out_dir = os.path.dirname(os.path.abspath(__file__))
+    final_file = os.path.join(out_dir, "final_leads.json")
+
+    print(f"📁 Output folder: {out_dir}")
+    print(f"📄 Final output (array): {final_file}")
+
     print("Starting Crawl4AI (Deep Mode)...")
     async with AsyncWebCrawler(config=browser_config) as crawler:
-        for i, item in enumerate(items):
-            base_url = item.get('website')
-            hunter_emails = [] # Initialize here to avoid UnboundLocalError
+
+        if stream_mode:
+            processed = 0
+            print("🧵 Stream mode ON (processando leads conforme chegam no arquivo .jsonl).")
+
+            # 1) Processa o que já existe no arquivo (caso o Node tenha escrito antes do worker estar pronto)
+            for item in iter_jsonl_objects(json_file):
+                processed += 1
+                i = processed - 1
+                # ---- processamento do lead (mesma lógica do loop normal) ----
+                base_url = item.get('website')
+                hunter_emails = []
+                has_website = False
+                if base_url and "google.com" not in base_url and item.get('website') != "Não disponível":
+                    has_website = True
+                    if not base_url.startswith('http'):
+                        base_url = 'http://' + base_url
+                    print(f"[{processed}] Processing {item.get('nome_empresa')} ({base_url})...")
+                else:
+                    print(f"[{processed}] Processing {item.get('nome_empresa')} (No Website - Maps Data Only)...")
+
+                full_content = ""
+
+                if has_website:
+                    home_result = await crawl_page(crawler, base_url, "Home")
+                    if home_result:
+                        full_content += f"# Homepage\n{home_result.markdown}\n"
+
+                    internal_links = []
+                    external_links = []
+                    if home_result:
+                        internal_links = home_result.links.get('internal', [])
+                        external_links = home_result.links.get('external', [])
+                    all_links = internal_links + external_links
+
+                    print(f"      🔗 Found {len(internal_links)} internal and {len(external_links)} external links.")
+
+                    keywords = {
+                        'contact': ['contato', 'contact', 'fale', 'atendimento'],
+                        'about': ['sobre', 'about', 'quem-somos', 'institucional', 'empresa', 'imobiliaria'],
+                        'services': ['servicos', 'services', 'produtos', 'products', 'imoveis']
+                    }
+
+                    social_keywords = {
+                        'instagram': ['instagram.com'],
+                        'facebook': ['facebook.com'],
+                        'linktree': ['linktr.ee'],
+                        'linkedin': ['linkedin.com']
+                    }
+
+                    def normalize_url(link_url, base):
+                        if not link_url.startswith('http'):
+                            if not base.endswith('/') and not link_url.startswith('/'):
+                                return base + '/' + link_url
+                            elif base.endswith('/') and link_url.startswith('/'):
+                                return base + link_url[1:]
+                            else:
+                                return base + link_url
+                        return link_url
+
+                    unique_internal_urls = set()
+                    priority_links = []
+                    other_links = []
+                    social_links_to_crawl = {}
+
+                    for link in internal_links:
+                        href = link.get('href', '')
+                        if not href:
+                            continue
+                        full_url = normalize_url(href, base_url)
+                        if full_url in unique_internal_urls or full_url.rstrip('/') == base_url.rstrip('/'):
+                            continue
+                        unique_internal_urls.add(full_url)
+                        lower_href = href.lower()
+                        is_priority = False
+                        for key, words in keywords.items():
+                            if any(w in lower_href for w in words):
+                                is_priority = True
+                                break
+                        if is_priority:
+                            priority_links.append(full_url)
+                        else:
+                            other_links.append(full_url)
+
+                    for link in external_links:
+                        href = link.get('href', '').lower()
+                        for key, domains in social_keywords.items():
+                            if key not in social_links_to_crawl and any(d in href for d in domains):
+                                print(f"         📱 Found {key} link: {href}")
+                                social_links_to_crawl[key] = link['href']
+
+                    final_crawl_list = priority_links + other_links
+                    print(f"      📋 Selected {len(final_crawl_list)} pages to crawl (Priority: {len(priority_links)})")
+
+                    for j, link_url in enumerate(final_crawl_list):
+                        print(f"      🕷️ Deep Crawling [{j+1}/{len(final_crawl_list)}]: {link_url}")
+                        sub_result = await crawl_page(crawler, link_url, f"Page-{j+1}")
+                        if sub_result:
+                            full_content += f"\n# Page: {link_url}\n{sub_result.markdown}\n"
+
+                    for key, link_url in social_links_to_crawl.items():
+                        print(f"      🕷️ Social Crawling {key}: {link_url}")
+                        sub_result = await crawl_page(crawler, link_url, f"Social-{key.capitalize()}")
+                        if sub_result:
+                            social_content = sub_result.markdown[:2000]
+                            full_content += f"\n# Social Media ({key.capitalize()})\n{social_content}\n"
+                            item[key] = link_url
+
+                    try:
+                        if base_url:
+                            domain = base_url.replace('http://', '').replace('https://', '').split('/')[0]
+                            hunter_emails = fetch_hunter_emails(domain)
+                    except Exception as e:
+                        print(f"      ⚠️ Failed to extract domain for Hunter: {e}")
+
+                detected_tax_id = None
+                detected_tech_stack = []
+                if has_website and 'home_result' in locals() and home_result:
+                    country_code_for_extraction = None
+                    if search_country:
+                        country_map = {
+                            'Brazil': 'BR', 'Brasil': 'BR', 'USA': 'US', 'United States': 'US',
+                            'France': 'FR', 'Germany': 'DE', 'UK': 'GB', 'United Kingdom': 'GB',
+                            'Australia': 'AU', 'Mexico': 'MX', 'México': 'MX', 'Argentina': 'AR',
+                            'Portugal': 'PT', 'Spain': 'ES', 'Italy': 'IT', 'Canada': 'CA'
+                        }
+                        country_code_for_extraction = country_map.get(search_country)
+                    detected_tax_id = extract_tax_id(home_result.markdown, country_code_for_extraction)
+                    if hasattr(home_result, 'html'):
+                        detected_tech_stack = detect_tech_stack(home_result.html)
+
+                system_context = "\n\n[SYSTEM DETECTED DATA (High Confidence)]\n"
+                if detected_tax_id:
+                    system_context += f"TAX ID: {detected_tax_id['type']} - {detected_tax_id['value']}\n"
+                if detected_tech_stack:
+                    system_context += f"TECH STACK: {', '.join(detected_tech_stack)}\n"
+                full_content += system_context
+
+                clean_profile = await analyze_with_gpt(full_content, item, hunter_emails, output_lang, search_country)
+                if clean_profile:
+                    if 'contact_details' in clean_profile:
+                        if 'emails' in clean_profile['contact_details']:
+                            raw_final_emails = clean_profile['contact_details']['emails']
+                            validated_final_emails = []
+                            for mail in raw_final_emails:
+                                v_mail = verify_email_address(mail)
+                                if v_mail:
+                                    validated_final_emails.append(v_mail)
+                            clean_profile['contact_details']['emails'] = validated_final_emails
+
+                        if 'phones' in clean_profile['contact_details']:
+                            phones = clean_profile['contact_details']['phones']
+                            whatsapp_links = []
+                            for p in phones:
+                                wa = detect_whatsapp(p)
+                                if wa:
+                                    whatsapp_links.append({"phone": p, "link": wa})
+                            if whatsapp_links:
+                                clean_profile['contact_details']['whatsapp_verified'] = whatsapp_links
+
+                    def clean_recursive(obj):
+                        if isinstance(obj, dict):
+                            for k, v in obj.items():
+                                if isinstance(v, str) and "Pendente" in v:
+                                    obj[k] = None
+                                else:
+                                    clean_recursive(v)
+                        elif isinstance(obj, list):
+                            for _it in obj:
+                                clean_recursive(_it)
+
+                    clean_recursive(clean_profile)
+
+                    cnpja_data = None
+                    tax_id_info = clean_profile.get('company_info', {}).get('tax_id')
+                    if tax_id_info and isinstance(tax_id_info, dict):
+                        tax_type = (tax_id_info.get('type') or '').upper()
+                        tax_value = tax_id_info.get('value')
+                        tax_country = (tax_id_info.get('country') or '').upper()
+                        if tax_type == 'CNPJ' or tax_country == 'BR':
+                            if tax_value:
+                                cnpja_data = fetch_cnpja_data(tax_value)
+                    clean_profile['cnpja_data'] = cnpja_data
+
+                    final_leads.append(clean_profile)
+                    print("      ✨ Lead successfully enriched and cleaned!")
+                else:
+                    print("      ⚠️ Could not generate clean profile, skipping.")
+
+            # 2) Fica “tail -f” para consumir novas linhas até __END__
+            for item in iter_jsonl_lines_follow(json_file):
+                processed += 1
+                i = processed - 1
+                # ---- processamento do lead (mesma lógica do loop normal) ----
+                base_url = item.get('website')
+                hunter_emails = []
+                has_website = False
+                if base_url and "google.com" not in base_url and item.get('website') != "Não disponível":
+                    has_website = True
+                    if not base_url.startswith('http'):
+                        base_url = 'http://' + base_url
+                    print(f"[{processed}] Processing {item.get('nome_empresa')} ({base_url})...")
+                else:
+                    print(f"[{processed}] Processing {item.get('nome_empresa')} (No Website - Maps Data Only)...")
+
+                full_content = ""
+
+                if has_website:
+                    home_result = await crawl_page(crawler, base_url, "Home")
+                    if home_result:
+                        full_content += f"# Homepage\n{home_result.markdown}\n"
+
+                    internal_links = []
+                    external_links = []
+                    if home_result:
+                        internal_links = home_result.links.get('internal', [])
+                        external_links = home_result.links.get('external', [])
+                    all_links = internal_links + external_links
+
+                    print(f"      🔗 Found {len(internal_links)} internal and {len(external_links)} external links.")
+
+                    keywords = {
+                        'contact': ['contato', 'contact', 'fale', 'atendimento'],
+                        'about': ['sobre', 'about', 'quem-somos', 'institucional', 'empresa', 'imobiliaria'],
+                        'services': ['servicos', 'services', 'produtos', 'products', 'imoveis']
+                    }
+
+                    social_keywords = {
+                        'instagram': ['instagram.com'],
+                        'facebook': ['facebook.com'],
+                        'linktree': ['linktr.ee'],
+                        'linkedin': ['linkedin.com']
+                    }
+
+                    def normalize_url(link_url, base):
+                        if not link_url.startswith('http'):
+                            if not base.endswith('/') and not link_url.startswith('/'):
+                                return base + '/' + link_url
+                            elif base.endswith('/') and link_url.startswith('/'):
+                                return base + link_url[1:]
+                            else:
+                                return base + link_url
+                        return link_url
+
+                    unique_internal_urls = set()
+                    priority_links = []
+                    other_links = []
+                    social_links_to_crawl = {}
+
+                    for link in internal_links:
+                        href = link.get('href', '')
+                        if not href:
+                            continue
+                        full_url = normalize_url(href, base_url)
+                        if full_url in unique_internal_urls or full_url.rstrip('/') == base_url.rstrip('/'):
+                            continue
+                        unique_internal_urls.add(full_url)
+                        lower_href = href.lower()
+                        is_priority = False
+                        for key, words in keywords.items():
+                            if any(w in lower_href for w in words):
+                                is_priority = True
+                                break
+                        if is_priority:
+                            priority_links.append(full_url)
+                        else:
+                            other_links.append(full_url)
+
+                    for link in external_links:
+                        href = link.get('href', '').lower()
+                        for key, domains in social_keywords.items():
+                            if key not in social_links_to_crawl and any(d in href for d in domains):
+                                print(f"         📱 Found {key} link: {href}")
+                                social_links_to_crawl[key] = link['href']
+
+                    final_crawl_list = priority_links + other_links
+                    print(f"      📋 Selected {len(final_crawl_list)} pages to crawl (Priority: {len(priority_links)})")
+
+                    for j, link_url in enumerate(final_crawl_list):
+                        print(f"      🕷️ Deep Crawling [{j+1}/{len(final_crawl_list)}]: {link_url}")
+                        sub_result = await crawl_page(crawler, link_url, f"Page-{j+1}")
+                        if sub_result:
+                            full_content += f"\n# Page: {link_url}\n{sub_result.markdown}\n"
+
+                    for key, link_url in social_links_to_crawl.items():
+                        print(f"      🕷️ Social Crawling {key}: {link_url}")
+                        sub_result = await crawl_page(crawler, link_url, f"Social-{key.capitalize()}")
+                        if sub_result:
+                            social_content = sub_result.markdown[:2000]
+                            full_content += f"\n# Social Media ({key.capitalize()})\n{social_content}\n"
+                            item[key] = link_url
+
+                    try:
+                        if base_url:
+                            domain = base_url.replace('http://', '').replace('https://', '').split('/')[0]
+                            hunter_emails = fetch_hunter_emails(domain)
+                    except Exception as e:
+                        print(f"      ⚠️ Failed to extract domain for Hunter: {e}")
+
+                detected_tax_id = None
+                detected_tech_stack = []
+                if has_website and 'home_result' in locals() and home_result:
+                    country_code_for_extraction = None
+                    if search_country:
+                        country_map = {
+                            'Brazil': 'BR', 'Brasil': 'BR', 'USA': 'US', 'United States': 'US',
+                            'France': 'FR', 'Germany': 'DE', 'UK': 'GB', 'United Kingdom': 'GB',
+                            'Australia': 'AU', 'Mexico': 'MX', 'México': 'MX', 'Argentina': 'AR',
+                            'Portugal': 'PT', 'Spain': 'ES', 'Italy': 'IT', 'Canada': 'CA'
+                        }
+                        country_code_for_extraction = country_map.get(search_country)
+                    detected_tax_id = extract_tax_id(home_result.markdown, country_code_for_extraction)
+                    if hasattr(home_result, 'html'):
+                        detected_tech_stack = detect_tech_stack(home_result.html)
+
+                system_context = "\n\n[SYSTEM DETECTED DATA (High Confidence)]\n"
+                if detected_tax_id:
+                    system_context += f"TAX ID: {detected_tax_id['type']} - {detected_tax_id['value']}\n"
+                if detected_tech_stack:
+                    system_context += f"TECH STACK: {', '.join(detected_tech_stack)}\n"
+                full_content += system_context
+
+                clean_profile = await analyze_with_gpt(full_content, item, hunter_emails, output_lang, search_country)
+                if clean_profile:
+                    # (mesmo pós-processamento do fluxo normal)
+                    if 'contact_details' in clean_profile:
+                        if 'emails' in clean_profile['contact_details']:
+                            raw_final_emails = clean_profile['contact_details']['emails']
+                            validated_final_emails = []
+                            for mail in raw_final_emails:
+                                v_mail = verify_email_address(mail)
+                                if v_mail:
+                                    validated_final_emails.append(v_mail)
+                            clean_profile['contact_details']['emails'] = validated_final_emails
+
+                        if 'phones' in clean_profile['contact_details']:
+                            phones = clean_profile['contact_details']['phones']
+                            whatsapp_links = []
+                            for p in phones:
+                                wa = detect_whatsapp(p)
+                                if wa:
+                                    whatsapp_links.append({"phone": p, "link": wa})
+                            if whatsapp_links:
+                                clean_profile['contact_details']['whatsapp_verified'] = whatsapp_links
+
+                    def clean_recursive(obj):
+                        if isinstance(obj, dict):
+                            for k, v in obj.items():
+                                if isinstance(v, str) and "Pendente" in v:
+                                    obj[k] = None
+                                else:
+                                    clean_recursive(v)
+                        elif isinstance(obj, list):
+                            for _it in obj:
+                                clean_recursive(_it)
+
+                    clean_recursive(clean_profile)
+
+                    cnpja_data = None
+                    tax_id_info = clean_profile.get('company_info', {}).get('tax_id')
+                    if tax_id_info and isinstance(tax_id_info, dict):
+                        tax_type = (tax_id_info.get('type') or '').upper()
+                        tax_value = tax_id_info.get('value')
+                        tax_country = (tax_id_info.get('country') or '').upper()
+                        if tax_type == 'CNPJ' or tax_country == 'BR':
+                            if tax_value:
+                                cnpja_data = fetch_cnpja_data(tax_value)
+                    clean_profile['cnpja_data'] = cnpja_data
+
+                    final_leads.append(clean_profile)
+
+                    print("      ✨ Lead successfully enriched and cleaned!")
+                else:
+                    print("      ⚠️ Could not generate clean profile, skipping.")
+
+            # terminou stream -> salva o json final (array)
+        else:
+            for i, item in enumerate(items):
+                base_url = item.get('website')
+                hunter_emails = [] # Initialize here to avoid UnboundLocalError
             
             # Check if website is valid
             has_website = False
@@ -605,9 +1081,9 @@ async def main():
                             print(f"         📱 Found {key} link: {href}")
                             social_links_to_crawl[key] = link['href']
 
-                # 3. Final Crawl List (Priority first, then others, max 10)
+                # 3. Final Crawl List (Priority first, then others)
+                # ATENÇÃO: sem limite -> pode aumentar MUITO o tempo/custo em sites grandes.
                 final_crawl_list = priority_links + other_links
-                final_crawl_list = final_crawl_list[:10]
                 
                 print(f"      📋 Selected {len(final_crawl_list)} pages to crawl (Priority: {len(priority_links)})")
 
@@ -731,19 +1207,20 @@ async def main():
                 clean_profile['cnpja_data'] = cnpja_data
 
                 final_leads.append(clean_profile)
+
                 print("      ✨ Lead successfully enriched and cleaned!")
             else:
                 print("      ⚠️ Could not generate clean profile, skipping.")
 
-    # Save FINAL CLEAN JSON
-    final_file = "final_leads.json"
+    # Save FINAL CLEAN JSON (array) - compatibilidade
     print(f"Saving CLEAN data to {final_file}...")
     with open(final_file, 'w', encoding='utf-8') as f:
         json.dump(final_leads, f, indent=2, ensure_ascii=False)
     
-    # Clean up temporary input file
+    # Clean up temporary input file (somente quando a entrada for .json, não .jsonl stream)
+    # No modo stream, o arquivo .jsonl é usado como "fila" e pode ser útil manter para auditoria.
     try:
-        if os.path.exists(json_file):
+        if (not stream_mode) and os.path.exists(json_file):
             os.remove(json_file)
             print(f"Deleted temporary file: {json_file}")
     except Exception as e:

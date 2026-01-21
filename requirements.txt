@@ -1,0 +1,5 @@
+crawl4ai
+openai
+python-dotenv
+requests
+email-validator

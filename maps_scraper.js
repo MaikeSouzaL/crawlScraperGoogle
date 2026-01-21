@@ -355,6 +355,29 @@ async function main() {
   const links = Array.from(linksSet).slice(0, MAX_RESULTS);
   console.log(`Links coletados: ${links.length}`);
 
+  // Arquivo de saída incremental (JSON Lines) - um lead por linha
+  const safeName = QUERY.replace(/[^\w\s]+/g, "")
+    .replace(/\s+/g, "_")
+    .slice(0, 60);
+  const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, "-");
+  const fileName = `resultado_${safeName}_${timestamp}.jsonl`;
+
+  // Garante que o arquivo comece vazio a cada execução
+  fs.writeFileSync(fileName, "", "utf-8");
+
+  // Inicia o worker Python (stream) para enriquecer lead por lead enquanto o Node coleta
+  console.log(
+    "\n🧵 Iniciando worker Python (stream) para enriquecer leads em tempo real...",
+  );
+  const { spawn } = require("child_process");
+  const pythonExecutable = ".\\.venv\\Scripts\\python.exe";
+  const pythonArgs = ["enrich_leads.py", fileName, lang, country];
+  console.log(`   Executing: ${pythonExecutable} ${pythonArgs.join(" ")}`);
+
+  const pythonProcess = spawn(pythonExecutable, pythonArgs, {
+    stdio: "inherit",
+  });
+
   // Função para extrair dados do site da empresa
   async function scrapeWebsiteData(context, url) {
     if (!url || url.includes("google.com")) return {};
@@ -492,7 +515,7 @@ async function main() {
     return data;
   }
 
-  const items = [];
+  const items = []; // Mantém em memória (opcional), mas o arquivo já vai sendo preenchido.
 
   for (let i = 0; i < links.length; i++) {
     const url = links[i];
@@ -792,7 +815,7 @@ async function main() {
       //     websiteData = await scrapeWebsiteData(context, cleanWebsite);
       // }
 
-      items.push({
+      const lead = {
         nome_empresa: name || "Não disponível",
         categoria: category || "Não disponível",
         endereco: cleanAddress || "Não disponível",
@@ -824,7 +847,17 @@ async function main() {
           available_actions: availableActions,
           google_attributes: googleAttributes,
         },
-      });
+      };
+
+      // Salva incrementalmente (um JSON por linha)
+      fs.appendFileSync(
+        fileName,
+        JSON.stringify(lead, null, 0) + "\n",
+        "utf-8",
+      );
+
+      // Também guarda em memória (caso queira no final)
+      items.push(lead);
     } catch (error) {
       console.log(`❌ Erro ao processar ${url}: ${error.message}`);
     }
@@ -832,42 +865,23 @@ async function main() {
     await page.waitForTimeout(800);
   }
 
-  // Gerar nome do arquivo seguro
-  const safeName = QUERY.replace(/[^\w\s]+/g, "")
-    .replace(/\s+/g, "_")
-    .slice(0, 60);
-  const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, "-");
-  const fileName = `resultado_${safeName}_${timestamp}.json`;
-
-  // Salvar resultados em JSON (Temporário para o Python)
-  fs.writeFileSync(fileName, JSON.stringify(items, null, 2), "utf-8");
+  // Sinaliza que terminou de escrever leads no arquivo (para o Python encerrar)
+  try {
+    fs.appendFileSync(fileName, "__END__\n", "utf-8");
+  } catch (e) {
+    console.log("⚠️ Falha ao escrever marcador __END__:", e.message);
+  }
 
   console.log(`\n✅ ${items.length} empresas encontradas!`);
   console.log(`📄 Dados temporários salvos em: ${fileName}`);
 
   await browser.close();
 
-  // Executar enriquecimento com Python (Crawl4AI)
-  console.log(
-    "\n🚀 Iniciando enriquecimento de dados com Crawl4AI (Python)...",
-  );
-  const { spawn } = require("child_process");
-
-  // Usar caminho relativo explícito para Windows
-  const pythonExecutable = ".\\.venv\\Scripts\\python.exe";
-  const pythonArgs = ["enrich_leads.py", fileName, lang, country];
-
-  console.log(`   Executing: ${pythonExecutable} ${pythonArgs.join(" ")}`);
-
-  const pythonProcess = spawn(pythonExecutable, pythonArgs, {
-    stdio: "inherit",
-  });
-
   pythonProcess.on("close", (code) => {
     if (code === 0) {
-      console.log("✨ Processo finalizado com sucesso!");
+      console.log("✨ Worker Python finalizado com sucesso!");
     } else {
-      console.error(`❌ Python encerrou com código de erro: ${code}`);
+      console.error(`❌ Worker Python encerrou com código de erro: ${code}`);
     }
   });
 }
