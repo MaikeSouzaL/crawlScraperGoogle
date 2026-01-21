@@ -3,3 +3,14 @@ proxies.txt
 
 node_modules/
 .env
+
+# artefatos gerados (runtime)
+resultado_*.jsonl
+final_leads.json
+
+# caches/logs locais
+__pycache__/
+*.pyc
+*.log
+playwright-report/
+test-results/

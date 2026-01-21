@@ -16,6 +16,7 @@ Este projeto coleta leads do Google Maps (Node.js + Playwright) e enriquece cada
 ## 1) Instalação (Node.js)
 
 ### Dependências
+
 As dependências Node estão em `package.json`:
 
 - `playwright` (automação do browser / scraping)
@@ -24,6 +25,7 @@ As dependências Node estão em `package.json`:
 - `openai` (para detecção de idioma via GPT no Node)
 
 ### Instalar
+
 No diretório do projeto:
 
 ```bash
@@ -31,6 +33,7 @@ npm install
 ```
 
 ### Instalar browsers do Playwright
+
 O Playwright precisa baixar os browsers:
 
 ```bash
@@ -58,6 +61,7 @@ source .venv/Scripts/activate
 ```
 
 ### Dependências Python
+
 Atualmente não existe `requirements.txt` no repositório, então **crie e instale** com:
 
 ```bash
@@ -130,6 +134,7 @@ Parâmetros comuns:
 - `--limit`: limite de leads
 
 ### Saída
+
 - `final_leads.json`: gerado pelo Python ao terminar.
 
 ---
@@ -137,15 +142,18 @@ Parâmetros comuns:
 ## 6) Notas de operação em ambiente de CRM
 
 ### Rate limit do Hunter (429)
+
 O Hunter.io tem limite de requisições. O projeto já trata `429` com tentativas e espera (backoff). Mesmo assim, em listas enormes pode acontecer de alguns leads ficarem sem emails do Hunter.
 
 ### Headless vs Visual
+
 - `maps_scraper.js`: Playwright normalmente roda visual.
 - `enrich_leads.py`: `BrowserConfig(headless=False)` também roda visual.
 
 Em servidores/CRM, provavelmente você vai querer **headless**.
 
 ### Arquivo temporário `resultado_*.jsonl`
+
 Esse arquivo é o “buffer/fila” entre Node e Python. Se você quiser, dá pra excluir automaticamente após concluir (mas durante o stream é útil manter).
 
 ---
